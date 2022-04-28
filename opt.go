@@ -9,3 +9,18 @@ func WithLogger[J any, R any] (log logrus.FieldLogger) SplitterOption[J, R] {
 		s.log = log
 	}
 }
+
+func WithFunction[J any, R any] (f func(J) R, workerCount int) SplitterOption[J, R] {
+	return WithErrorFunction(
+		func(job J) (R,error) {
+			return f(job), nil
+		}, workerCount)
+}
+
+func WithErrorFunction[J any, R any] (f func(J) (R,error), workerCount int) SplitterOption[J, R] {
+	return func(s *splitter[J, R] ) {
+		for i:=0;i<workerCount;i++ {
+			s.operations = append(s.operations, f)
+		}
+	}
+}

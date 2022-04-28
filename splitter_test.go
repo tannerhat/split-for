@@ -17,7 +17,7 @@ func TestSplitter(t *testing.T) {
 
 	exp := make([]int, 25)
 	ret := []int{}
-	sf := New[int, int](ctx, square, 5)
+	sf := New[int, int](ctx, WithFunction(square,5))
 	for i := 0; i < 25; i++ {
 		sf.Do(i)
 		exp[i]=i*i

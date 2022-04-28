@@ -10,7 +10,7 @@ type splitter[J any, R any] struct {
 	jobs      chan J
 	results   chan R
 	errors 	  chan error
-	operation func(J) (R,error)
+	operations []func(J) (R,error)
 
 	workerDone sync.WaitGroup
 	doneLock   sync.Mutex
@@ -19,14 +19,18 @@ type splitter[J any, R any] struct {
 	log logrus.FieldLogger
 }
 
-func New[J any, R any](ctx context.Context, f func(J) R, workers int, opts ...SplitterOption[J, R]) *splitter[J, R] {
+func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *splitter[J, R] {
 	sf := &splitter[J, R]{
-		operation:  f,
 		jobs:       make(chan J, 1000),
 		results:    make(chan R, 1000),
+		operations: make([]func(J) (R,error),0),
 		workerDone: sync.WaitGroup{},
 		doneLock:   sync.Mutex{},
 		done:       make(chan bool, 0),
+	}
+
+	for _,opt:=range opts {
+		opt(sf)
 	}
 
 	// this routine checks for context cancellation and kills the splitter if it happens
@@ -41,9 +45,9 @@ func New[J any, R any](ctx context.Context, f func(J) R, workers int, opts ...Sp
 		}
 	}()
 
-	for i := 0; i < workers; i++ {
+	for i,f := range sf.operations {
 		sf.workerDone.Add(1)
-		go func(id int) {
+		go func(id int, f func(J) (R,error)) {
 			defer sf.workerDone.Done()
 			for {
 				select {
@@ -54,11 +58,12 @@ func New[J any, R any](ctx context.Context, f func(J) R, workers int, opts ...Sp
 					if !ok {
 						return
 					}
-					sf.results <- sf.operation(next)
+					res, _ := f(next)
+					sf.results <- res
 				default:
 				}
 			}
-		}(i)
+		}(i,f)
 	}
 
 	// once the workers exit, close the results channel
