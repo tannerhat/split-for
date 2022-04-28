@@ -47,7 +47,7 @@ func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *split
 
 	for i,f := range sf.operations {
 		sf.workerDone.Add(1)
-		go func(id int, f func(J) (R,error)) {
+		go func(id int, fn func(J) (R,error)) {
 			defer sf.workerDone.Done()
 			for {
 				select {
@@ -58,7 +58,7 @@ func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *split
 					if !ok {
 						return
 					}
-					res, _ := f(next)
+					res, _ := fn(next)
 					sf.results <- res
 				default:
 				}

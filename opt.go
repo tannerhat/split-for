@@ -24,3 +24,23 @@ func WithErrorFunction[J any, R any] (f func(J) (R,error), workerCount int) Spli
 		}
 	}
 }
+
+
+func WithFunctions[J any, R any] (funcs []func(J) R) SplitterOption[J, R] {
+	return func(s *splitter[J, R] ) {
+		for _,f:= range funcs{
+		withErr := func(fn func(J) R) func(J)(R,error) {
+			return func(job J) (R,error) {
+			return fn(job), nil
+		}
+	}(f)
+		s.operations = append(s.operations, withErr)
+	}
+	}
+}
+
+func WithErrorFunctions[J any, R any] (funcs []func(J) (R,error)) SplitterOption[J, R] {
+	return func(s *splitter[J, R] ) {
+		s.operations = funcs
+	}
+}
