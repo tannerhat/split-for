@@ -3,17 +3,19 @@ package splitter
 import (
 	"context"
 	"sync"
-    "github.com/sirupsen/logrus"
+
+	"github.com/sirupsen/logrus"
 )
 
 type splitter[J any, R any] struct {
-	jobs      chan J
-	results   chan R
-	errors 	  chan error
-	operations []func(J) (R,error)
+	jobs        chan J
+	results     chan R
+	errors      chan error
+	operations  []func(J) (R, error)
+	stopOnError bool
 
 	workerDone sync.WaitGroup
-	doneLock   sync.Mutex
+	cancelLock sync.Mutex
 	done       chan bool
 
 	log logrus.FieldLogger
@@ -23,13 +25,15 @@ func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *split
 	sf := &splitter[J, R]{
 		jobs:       make(chan J, 1000),
 		results:    make(chan R, 1000),
-		operations: make([]func(J) (R,error),0),
+		errors:     make(chan error, 1000),
+		operations: make([]func(J) (R, error), 0),
 		workerDone: sync.WaitGroup{},
-		doneLock:   sync.Mutex{},
+		cancelLock: sync.Mutex{},
 		done:       make(chan bool, 0),
 	}
 
-	for _,opt:=range opts {
+	// apply options (the source of the operations slice)
+	for _, opt := range opts {
 		opt(sf)
 	}
 
@@ -45,9 +49,9 @@ func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *split
 		}
 	}()
 
-	for i,f := range sf.operations {
+	for i, f := range sf.operations {
 		sf.workerDone.Add(1)
-		go func(id int, fn func(J) (R,error)) {
+		go func(id int, fn func(J) (R, error)) {
 			defer sf.workerDone.Done()
 			for {
 				select {
@@ -56,33 +60,35 @@ func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *split
 					return
 				case next, ok := <-sf.jobs:
 					if !ok {
+						// jobs channel is closed, no more jobs are coming so we can close this worker
 						return
 					}
-					res, _ := fn(next)
+					res, err := fn(next)
+					if err != nil {
+						sf.errors <- err
+						if sf.stopOnError {
+							sf.Cancel()
+							return
+						}
+					}
 					sf.results <- res
 				default:
 				}
 			}
-		}(i,f)
+		}(i, f)
 	}
 
 	// once the workers exit, close the results channel
 	go func() {
 		sf.workerDone.Wait()
 		close(sf.results)
+		close(sf.errors)
 	}()
 	return sf
 }
 
+//
 func (sf *splitter[J, R]) Do(job J) {
-	defer sf.doneLock.Unlock()
-	sf.doneLock.Lock()
-	// check for already closed
-	select {
-	case <-sf.done:
-		return
-	default:
-	}
 	sf.jobs <- job
 }
 
@@ -95,8 +101,10 @@ func (sf *splitter[J, R]) Results() <-chan R {
 }
 
 func (sf *splitter[J, R]) Cancel() {
-	defer sf.doneLock.Unlock()
-	sf.doneLock.Lock()
+	// lock because there are mutliple sources of Cancel (context, user, error in processing)
+	// and we need to prevent multiple calls to close(sf.done)
+	defer sf.cancelLock.Unlock()
+	sf.cancelLock.Lock()
 	// check for already closed
 	select {
 	case <-sf.done:
@@ -106,15 +114,8 @@ func (sf *splitter[J, R]) Cancel() {
 	close(sf.done)
 }
 
+// Done signals to the splitter that no more jobs are coming in and allows workers
+// to exit once they have completed the current jobs.
 func (sf *splitter[J, R]) Done() {
-	defer sf.doneLock.Unlock()
-	sf.doneLock.Lock()
-	// check for already closed
-	select {
-	case <-sf.done:
-		return
-	default:
-	}
 	close(sf.jobs)
 }
-
