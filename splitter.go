@@ -3,6 +3,7 @@ package splitter
 import (
 	"context"
 	"sync"
+	"fmt"
 
 	"github.com/sirupsen/logrus"
 )
@@ -20,6 +21,11 @@ type splitter[J any, R any] struct {
 
 	log logrus.FieldLogger
 }
+
+var JobChannelFull = fmt.Errorf("Job channel is full, retry in a hot second")
+var ContextCancel = fmt.Errorf("context cancellation")
+var UserCancel = fmt.Errorf("user cancellation")
+var ErrorCancelMsg = "cancelling due to processing error: %w"
 
 func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *splitter[J, R] {
 	sf := &splitter[J, R]{
@@ -42,7 +48,7 @@ func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *split
 		select {
 		case <-ctx.Done():
 			// context cancelled, cancel the splitter and get outta here
-			sf.Cancel()
+			sf.cancel(ContextCancel)
 		case <-sf.done:
 			// splitter is done (either user cancel or all jobs done), get outta here
 			return
@@ -65,10 +71,11 @@ func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *split
 					}
 					res, err := fn(next)
 					if err != nil {
-						sf.errors <- err
 						if sf.stopOnError {
-							sf.Cancel()
+							sf.cancel(fmt.Errorf(ErrorCancelMsg, err))
 							return
+						} else {
+							sf.errors <- err
 						}
 					}
 					sf.results <- res
@@ -83,13 +90,22 @@ func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *split
 		sf.workerDone.Wait()
 		close(sf.results)
 		close(sf.errors)
+
+		// now, if sd.done isn't closed, we close it (have to acquire lock)
+		// pass nil because we don't want to send an error if we close here
+		sf.cancel(nil)
 	}()
 	return sf
 }
 
 //
-func (sf *splitter[J, R]) Do(job J) {
-	sf.jobs <- job
+func (sf *splitter[J, R]) Do(job J) error {
+	select {
+	case sf.jobs <- job:
+		return nil 
+	default:
+		return JobChannelFull
+	}
 }
 
 func (sf *splitter[J, R]) Errors() <-chan error {
@@ -99,8 +115,11 @@ func (sf *splitter[J, R]) Errors() <-chan error {
 func (sf *splitter[J, R]) Results() <-chan R {
 	return sf.results
 }
-
 func (sf *splitter[J, R]) Cancel() {
+	sf.cancel(UserCancel)
+}
+
+func (sf *splitter[J, R]) cancel(err error) {
 	// lock because there are mutliple sources of Cancel (context, user, error in processing)
 	// and we need to prevent multiple calls to close(sf.done)
 	defer sf.cancelLock.Unlock()
@@ -110,6 +129,9 @@ func (sf *splitter[J, R]) Cancel() {
 	case <-sf.done:
 		return
 	default:
+	}
+	if err != nil {
+		sf.errors <- err
 	}
 	close(sf.done)
 }
