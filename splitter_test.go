@@ -171,6 +171,7 @@ func TestErrorReturn(t *testing.T) {
 				// but don't add to expected
 				exp = append(exp, i*i)
 			}
+			time.Sleep(time.Millisecond*10)
 		}
 	}()
 
@@ -215,6 +216,7 @@ func TestErrorReturn(t *testing.T) {
 	}
 
 	// now let's finish and compare results
+	close(stopAdd)
 	sf.Done()
 	select {
 	case <-readDone:

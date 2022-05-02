@@ -78,7 +78,7 @@ func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *split
 							sf.errors <- err
 						}
 					} else {
-					sf.results <- res
+						sf.results <- res
 					}
 				default:
 				}
