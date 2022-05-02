@@ -150,6 +150,85 @@ func cancelTest(t *testing.T, reason cancelType) {
 	close(stopAdd)
 }
 
+func TestErrorReturn(t *testing.T) {
+	ctx := context.Background()
+
+	exp :=[]int{}
+	ret := []int{}
+	sf := New[int, int](ctx, WithErrorFunction(squareError, 20))
+
+	stopAdd := make(chan bool)
+	go func() {
+		for i:=0;;i++ {
+			select{
+			case <-stopAdd:
+				return
+			default:
+			}
+			err := sf.Do(i)
+			if err == nil {
+				// it can fail if the channel fills up, just ignore it
+				// but don't add to expected
+				exp = append(exp, i*i)
+			}
+		}
+	}()
+
+	readDone := make(chan bool)
+	go func() {
+		for x := range sf.Results() {
+			ret = append(ret, x)
+		}
+		close(readDone)
+	}()
+
+	// run for a bit to get some processing done
+	time.Sleep(time.Millisecond*50)
+
+	// we shouldn't have any errors yet
+	select {
+	case err:=<-sf.Errors():
+		t.Errorf("unexpected error:%s",err)
+	default:
+	}
+
+	// let's cause a few errors
+	for i:=0;i<3;i++ {
+		// cause an error
+		sf.Do(-1)
+		select {
+		case err:=<-sf.Errors():
+			if !errors.Is(err, testCancelError) {
+			t.Errorf("unexpected error.got:%s wanted:%s",err,testCancelError)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("never got our error")
+		}
+
+		// the error shouldn't have stopped proccessing, confirm by checking length, waiting
+		// and checking again. it should grow
+		startLen := len(ret)
+		time.Sleep(time.Millisecond*50)
+		if len(ret) == startLen {
+			t.Errorf("ret isn't growing, splitter stopped after error")
+		}
+	}
+
+	// now let's finish and compare results
+	sf.Done()
+	select {
+	case <-readDone:
+		break
+	case <-time.After(time.Second):
+		t.Errorf("test timed out, splitter might be hung")
+	}
+
+	sort.Ints(ret)
+	sort.Ints(exp)
+	if !reflect.DeepEqual(ret, exp) {
+		t.Errorf("bad returns. got:%v wanted:%v", ret, exp)
+	}
+}
 
 func TestSplitterWithFuncs(t *testing.T) {
 	ctx := context.Background()
