@@ -2,24 +2,24 @@ package splitter
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"reflect"
 	"sort"
 	"testing"
 	"time"
-	"errors"
-	"fmt"
 )
 
 func square(x int) int {
 	return x * x
 }
 
-func squareError(x int) (int,error) {
+func squareError(x int) (int, error) {
 	if x == -1 {
 		// to test error causing cancel
-		return 0,testCancelError
+		return 0, errTestCancelError
 	}
-	return x*x,nil
+	return x * x, nil
 }
 
 func TestSplitter(t *testing.T) {
@@ -62,26 +62,25 @@ func TestCancel(t *testing.T) {
 	cancelTest(t, errorCancel)
 }
 
-
 type cancelType string
 
 const (
 	userCancel    cancelType = "user"
 	contextCancel cancelType = "context"
-	errorCancel cancelType = "error"
+	errorCancel   cancelType = "error"
 )
 
-var testCancelError = fmt.Errorf("test cancel")
+var errTestCancelError = fmt.Errorf("test cancel")
 
 func cancelTest(t *testing.T, reason cancelType) {
 	t.Helper()
-	ctx,cancel := context.WithCancel( context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 
 	// have a splitter run a bunch of jobs
-	cancelTime :=1000
+	cancelTime := 1000
 	readDone := make(chan bool)
 
-	sf := New[int, int](ctx, WithErrorFunction(squareError, 5),StopOnError[int,int]())
+	sf := New[int, int](ctx, WithErrorFunction(squareError, 5), StopOnError[int, int]())
 	// in a routine, add jobs and do a cancel, it's in a routine so we can check that
 	// the splitter exits right away while we keep adding jobs
 	stopAdd := make(chan bool)
@@ -90,7 +89,7 @@ func cancelTest(t *testing.T, reason cancelType) {
 			sf.Done() // by the time we call this, it's a no-op
 		}()
 
-		for i := 0;; i++ {
+		for i := 0; ; i++ {
 			sf.Do(i)
 			if i == cancelTime {
 				// at some point, cause the cancel. We will keep adding
@@ -109,7 +108,6 @@ func cancelTest(t *testing.T, reason cancelType) {
 				return
 			default:
 				// keep on addin'
-				break
 			}
 		}
 	}()
@@ -125,12 +123,12 @@ func cancelTest(t *testing.T, reason cancelType) {
 	// we should get the error first
 	select {
 	case err := <-sf.Errors():
-		if reason == contextCancel && !errors.Is(err, ContextCancel) {
-			t.Errorf("wrong error returned by splitter. wanted:%s got:%s",ContextCancel,err)
-		} else if reason == userCancel && !errors.Is(err, UserCancel) {
-			t.Errorf("wrong error returned by splitter. wanted:%s got:%s",UserCancel,err)
-		} else if reason == errorCancel &&  !errors.Is(err, testCancelError) {
-			t.Errorf("wrong error returned by splitter. wanted:%s got:%s",testCancelError,err)
+		if reason == contextCancel && !errors.Is(err, ErrContextCancel) {
+			t.Errorf("wrong error returned by splitter. wanted:%s got:%s", ErrContextCancel, err)
+		} else if reason == userCancel && !errors.Is(err, ErrUserCancel) {
+			t.Errorf("wrong error returned by splitter. wanted:%s got:%s", ErrUserCancel, err)
+		} else if reason == errorCancel && !errors.Is(err, errTestCancelError) {
+			t.Errorf("wrong error returned by splitter. wanted:%s got:%s", errTestCancelError, err)
 		}
 	case <-readDone:
 		t.Errorf("expected error first, but read finished first")
@@ -153,14 +151,14 @@ func cancelTest(t *testing.T, reason cancelType) {
 func TestErrorReturn(t *testing.T) {
 	ctx := context.Background()
 
-	exp :=[]int{}
+	exp := []int{}
 	ret := []int{}
 	sf := New[int, int](ctx, WithErrorFunction(squareError, 20))
 
 	stopAdd := make(chan bool)
 	go func() {
-		for i:=0;;i++ {
-			select{
+		for i := 0; ; i++ {
+			select {
 			case <-stopAdd:
 				return
 			default:
@@ -171,7 +169,7 @@ func TestErrorReturn(t *testing.T) {
 				// but don't add to expected
 				exp = append(exp, i*i)
 			}
-			time.Sleep(time.Millisecond*10)
+			time.Sleep(time.Millisecond * 10)
 		}
 	}()
 
@@ -184,23 +182,23 @@ func TestErrorReturn(t *testing.T) {
 	}()
 
 	// run for a bit to get some processing done
-	time.Sleep(time.Millisecond*50)
+	time.Sleep(time.Millisecond * 50)
 
 	// we shouldn't have any errors yet
 	select {
-	case err:=<-sf.Errors():
-		t.Errorf("unexpected error:%s",err)
+	case err := <-sf.Errors():
+		t.Errorf("unexpected error:%s", err)
 	default:
 	}
 
 	// let's cause a few errors
-	for i:=0;i<3;i++ {
+	for i := 0; i < 3; i++ {
 		// cause an error
 		sf.Do(-1)
 		select {
-		case err:=<-sf.Errors():
-			if !errors.Is(err, testCancelError) {
-			t.Errorf("unexpected error.got:%s wanted:%s",err,testCancelError)
+		case err := <-sf.Errors():
+			if !errors.Is(err, errTestCancelError) {
+				t.Errorf("unexpected error.got:%s wanted:%s", err, errTestCancelError)
 			}
 		case <-time.After(time.Second):
 			t.Fatalf("never got our error")
@@ -209,7 +207,7 @@ func TestErrorReturn(t *testing.T) {
 		// the error shouldn't have stopped proccessing, confirm by checking length, waiting
 		// and checking again. it should grow
 		startLen := len(ret)
-		time.Sleep(time.Millisecond*50)
+		time.Sleep(time.Millisecond * 50)
 		if len(ret) == startLen {
 			t.Errorf("ret isn't growing, splitter stopped after error")
 		}

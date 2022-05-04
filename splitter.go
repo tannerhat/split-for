@@ -2,8 +2,8 @@ package splitter
 
 import (
 	"context"
-	"sync"
 	"fmt"
+	"sync"
 
 	"github.com/sirupsen/logrus"
 )
@@ -22,9 +22,9 @@ type splitter[J any, R any] struct {
 	log logrus.FieldLogger
 }
 
-var JobChannelFull = fmt.Errorf("Job channel is full, retry in a hot second")
-var ContextCancel = fmt.Errorf("context cancellation")
-var UserCancel = fmt.Errorf("user cancellation")
+var ErrJobChannelFull = fmt.Errorf("job channel is full, retry in a hot second")
+var ErrContextCancel = fmt.Errorf("context cancellation")
+var ErrUserCancel = fmt.Errorf("user cancellation")
 var ErrorCancelMsg = "cancelling due to processing error: %w"
 
 func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *splitter[J, R] {
@@ -35,7 +35,7 @@ func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *split
 		operations: make([]func(J) (R, error), 0),
 		workerDone: sync.WaitGroup{},
 		cancelLock: sync.Mutex{},
-		done:       make(chan bool, 0),
+		done:       make(chan bool),
 	}
 
 	// apply options (the source of the operations slice)
@@ -48,7 +48,7 @@ func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *split
 		select {
 		case <-ctx.Done():
 			// context cancelled, cancel the splitter and get outta here
-			sf.cancel(ContextCancel)
+			sf.cancel(ErrContextCancel)
 		case <-sf.done:
 			// splitter is done (either user cancel or all jobs done), get outta here
 			return
@@ -80,7 +80,6 @@ func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *split
 					} else {
 						sf.results <- res
 					}
-				default:
 				}
 			}
 		}(i, f)
@@ -92,7 +91,7 @@ func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *split
 		close(sf.results)
 		close(sf.errors)
 
-		// now, if sd.done isn't closed, we close it (have to acquire lock)
+		// now, if sf.done isn't closed, we close it (have to acquire lock)
 		// pass nil because we don't want to send an error if we close here
 		sf.cancel(nil)
 	}()
@@ -103,9 +102,9 @@ func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *split
 func (sf *splitter[J, R]) Do(job J) error {
 	select {
 	case sf.jobs <- job:
-		return nil 
+		return nil
 	default:
-		return JobChannelFull
+		return ErrJobChannelFull
 	}
 }
 
@@ -117,7 +116,7 @@ func (sf *splitter[J, R]) Results() <-chan R {
 	return sf.results
 }
 func (sf *splitter[J, R]) Cancel() {
-	sf.cancel(UserCancel)
+	sf.cancel(ErrUserCancel)
 }
 
 func (sf *splitter[J, R]) cancel(err error) {
