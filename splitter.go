@@ -8,7 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type splitter[J any, R any] struct {
+type Splitter[J any, R any] struct {
 	jobs        chan J
 	results     chan R
 	errors      chan error
@@ -22,13 +22,22 @@ type splitter[J any, R any] struct {
 	log logrus.FieldLogger
 }
 
+// ErrJobChannelFull is returned on calls to Do where the internal job channel is full,
+// the job is dropped and the user must try Do again if they want the given job processed.
 var ErrJobChannelFull = fmt.Errorf("job channel is full, retry in a hot second")
-var ErrContextCancel = fmt.Errorf("context cancellation")
-var ErrUserCancel = fmt.Errorf("user cancellation")
-var ErrorCancelMsg = "cancelling due to processing error: %w"
 
-func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *splitter[J, R] {
-	sf := &splitter[J, R]{
+// ErrContextCancel is returned on the error channel if the context passed to the constructor
+// is Done before jobs finish processing. The splitter will stop doing work and close
+// the results channel.
+var ErrContextCancel = fmt.Errorf("context cancellation")
+
+// ErrUserCancel is returned on the error channel if the user called Cancel before jobs
+// finish processing. The splitter will stop doing work and close the results channel.
+var ErrUserCancel = fmt.Errorf("user cancellation")
+var errorCancelMsg = "cancelling due to processing error: %w"
+
+func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *Splitter[J, R] {
+	sf := &Splitter[J, R]{
 		jobs:       make(chan J, 1000),
 		results:    make(chan R, 1000),
 		errors:     make(chan error, 1000),
@@ -72,7 +81,7 @@ func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *split
 					res, err := fn(next)
 					if err != nil {
 						if sf.stopOnError {
-							sf.cancel(fmt.Errorf(ErrorCancelMsg, err))
+							sf.cancel(fmt.Errorf(errorCancelMsg, err))
 							return
 						} else {
 							sf.errors <- err
@@ -99,7 +108,7 @@ func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *split
 }
 
 //
-func (sf *splitter[J, R]) Do(job J) error {
+func (sf *Splitter[J, R]) Do(job J) error {
 	select {
 	case sf.jobs <- job:
 		return nil
@@ -108,18 +117,18 @@ func (sf *splitter[J, R]) Do(job J) error {
 	}
 }
 
-func (sf *splitter[J, R]) Errors() <-chan error {
+func (sf *Splitter[J, R]) Errors() <-chan error {
 	return sf.errors
 }
 
-func (sf *splitter[J, R]) Results() <-chan R {
+func (sf *Splitter[J, R]) Results() <-chan R {
 	return sf.results
 }
-func (sf *splitter[J, R]) Cancel() {
+func (sf *Splitter[J, R]) Cancel() {
 	sf.cancel(ErrUserCancel)
 }
 
-func (sf *splitter[J, R]) cancel(err error) {
+func (sf *Splitter[J, R]) cancel(err error) {
 	// lock because there are mutliple sources of Cancel (context, user, error in processing)
 	// and we need to prevent multiple calls to close(sf.done)
 	defer sf.cancelLock.Unlock()
@@ -138,6 +147,6 @@ func (sf *splitter[J, R]) cancel(err error) {
 
 // Done signals to the splitter that no more jobs are coming in and allows workers
 // to exit once they have completed the current jobs.
-func (sf *splitter[J, R]) Done() {
+func (sf *Splitter[J, R]) Done() {
 	close(sf.jobs)
 }
