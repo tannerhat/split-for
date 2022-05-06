@@ -21,21 +21,23 @@ func WithFunction[J any, R any](f func(J) R, workerCount int) SplitterOption[J, 
 
 func WithErrorFunction[J any, R any](f func(J) (R, error), workerCount int) SplitterOption[J, R] {
 	return func(s *Splitter[J, R]) {
+		s.operations = make([]func(J) (R, error), workerCount)
 		for i := 0; i < workerCount; i++ {
-			s.operations = append(s.operations, f)
+			s.operations[i] = f
 		}
 	}
 }
 
 func WithFunctions[J any, R any](funcs []func(J) R) SplitterOption[J, R] {
 	return func(s *Splitter[J, R]) {
-		for _, f := range funcs {
+		s.operations = make([]func(J) (R, error), len(funcs))
+		for i, f := range funcs {
 			withErr := func(fn func(J) R) func(J) (R, error) {
 				return func(job J) (R, error) {
 					return fn(job), nil
 				}
 			}(f)
-			s.operations = append(s.operations, withErr)
+			s.operations[i] = withErr
 		}
 	}
 }

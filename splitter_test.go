@@ -11,6 +11,7 @@ import (
 )
 
 func square(x int) int {
+	fmt.Println(x * x)
 	return x * x
 }
 
