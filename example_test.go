@@ -15,7 +15,7 @@ func ExampleSplitter_simple() {
 	// create a splitter, passing in a function and how many routines processing
 	// jobs using this function you want
 	jobChan := make(chan int, 25)
-	sf := New[int, int](ctx, jobChan, WithFunction(square, 5))
+	sf := NewSplitter[int, int](ctx, jobChan, WithFunction(square, 5))
 	for i := 0; i < 25; i++ {
 		// add each job
 		jobChan <- i
