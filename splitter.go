@@ -9,7 +9,7 @@ import (
 )
 
 type Splitter[J any, R any] struct {
-	jobs        chan J
+	jobs        <-chan J
 	results     chan R
 	errors      chan error
 	operations  []func(J) (R, error)
@@ -36,9 +36,9 @@ var ErrContextCancel = fmt.Errorf("context cancellation")
 var ErrUserCancel = fmt.Errorf("user cancellation")
 var errorCancelMsg = "cancelling due to processing error: %w"
 
-func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *Splitter[J, R] {
+func New[J any, R any](ctx context.Context, jobs <-chan J, opts ...SplitterOption[J, R]) *Splitter[J, R] {
 	sf := &Splitter[J, R]{
-		jobs:       make(chan J, 1000),
+		jobs:       jobs,
 		results:    make(chan R, 1000),
 		errors:     make(chan error, 1000),
 		operations: make([]func(J) (R, error), 0),
@@ -107,16 +107,6 @@ func New[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *Split
 	return sf
 }
 
-//
-func (sf *Splitter[J, R]) Do(job J) error {
-	select {
-	case sf.jobs <- job:
-		return nil
-	default:
-		return ErrJobChannelFull
-	}
-}
-
 func (sf *Splitter[J, R]) Errors() <-chan error {
 	return sf.errors
 }
@@ -143,10 +133,4 @@ func (sf *Splitter[J, R]) cancel(err error) {
 		sf.errors <- err
 	}
 	close(sf.done)
-}
-
-// Done signals to the splitter that no more jobs are coming in and allows workers
-// to exit once they have completed the current jobs.
-func (sf *Splitter[J, R]) Done() {
-	close(sf.jobs)
 }
