@@ -28,13 +28,51 @@ func TestSplitter(t *testing.T) {
 
 	exp := make([]int, 25)
 	ret := []int{}
-	jobChan := make(chan int, 25)
-	sf := NewSplitter[int, int](ctx, jobChan, WithFunction(square, 5))
+	sf := NewSplitter[int, int](ctx, WithFunction(square, 5))
 	for i := 0; i < 25; i++ {
-		jobChan <- i
+		sf.Do(i)
 		exp[i] = i * i
 	}
-	close(jobChan)
+	sf.Done()
+
+	done := make(chan bool)
+	go func() {
+		for x := range sf.Results() {
+			ret = append(ret, x)
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		break
+	case <-time.After(time.Second):
+		t.Errorf("test timed out, splitter might be hung")
+	}
+
+	sort.Ints(ret)
+	sort.Ints(exp)
+	if !reflect.DeepEqual(ret, exp) {
+		t.Errorf("bad returns. got:%v wanted:%v", ret, exp)
+	}
+}
+
+func TestSplitterChannelFull(t *testing.T) {
+	ctx := context.Background()
+
+	exp := []int{}
+	ret := []int{}
+	sf := NewSplitter[int, int](ctx, WithFunction(square, 5))
+	errors := 0
+	for i := 0; errors < 5; i++ {
+		err := sf.Do(i)
+		if err == nil {
+			exp = append(exp, i*i)
+		} else {
+			errors++
+		}
+	}
+	sf.Done()
 
 	done := make(chan bool)
 	go func() {
@@ -82,18 +120,17 @@ func cancelTest(t *testing.T, reason cancelType) {
 	cancelTime := 1000
 	readDone := make(chan bool)
 
-	jobChan := make(chan int, 1000)
-	sf := NewSplitter[int, int](ctx, jobChan, WithErrorFunction(squareError, 5), StopOnError[int, int]())
+	sf := NewSplitter[int, int](ctx, WithErrorFunction(squareError, 5), StopOnError[int, int]())
 	// in a routine, add jobs and do a cancel, it's in a routine so we can check that
 	// the splitter exits right away while we keep adding jobs
 	stopAdd := make(chan bool)
 	go func() {
 		defer func() {
-			close(jobChan)
+			sf.Done()
 		}()
 
 		for i := 0; ; i++ {
-			jobChan <- i
+			sf.Do(i)
 			if i == cancelTime {
 				// at some point, cause the cancel. We will keep adding
 				// jobs though just to make it more difficult for splitter
@@ -102,7 +139,7 @@ func cancelTest(t *testing.T, reason cancelType) {
 				} else if reason == userCancel {
 					sf.Cancel()
 				} else if reason == errorCancel {
-					jobChan <- -1
+					sf.Do(-1)
 				}
 			}
 			select {
@@ -156,8 +193,7 @@ func TestErrorReturn(t *testing.T) {
 
 	exp := []int{}
 	ret := []int{}
-	jobChan := make(chan int, 1000)
-	sf := NewSplitter[int, int](ctx, jobChan, WithErrorFunction(squareError, 20))
+	sf := NewSplitter[int, int](ctx, WithErrorFunction(squareError, 20))
 
 	stopAdd := make(chan bool)
 	go func() {
@@ -167,11 +203,13 @@ func TestErrorReturn(t *testing.T) {
 				return
 			default:
 			}
-			jobChan <- i
-			// it can fail if the channel fills up, just ignore it
-			// but don't add to expected
-			exp = append(exp, i*i)
-			time.Sleep(time.Millisecond * 10)
+			err := sf.Do(i)
+			if err == nil {
+				// it can fail if the channel fills up, just ignore it
+				// but don't add to expected
+				exp = append(exp, i*i)
+				time.Sleep(time.Millisecond * 10)
+			}
 		}
 	}()
 
@@ -196,7 +234,7 @@ func TestErrorReturn(t *testing.T) {
 	// let's cause a few errors
 	for i := 0; i < 3; i++ {
 		// cause an error
-		jobChan <- -1
+		sf.Do(-1)
 		select {
 		case err := <-sf.Errors():
 			if !errors.Is(err, errTestCancelError) {
@@ -217,7 +255,7 @@ func TestErrorReturn(t *testing.T) {
 
 	// now let's finish and compare results
 	close(stopAdd)
-	close(jobChan)
+	sf.Done()
 	select {
 	case <-readDone:
 		break
@@ -257,16 +295,15 @@ func TestSplitterWithFuncs(t *testing.T) {
 	}
 
 	// create splitter with the funcs
-	jobChan := make(chan int, 1000)
-	sf := NewSplitter[int, int](ctx, jobChan, WithFunctions[int, int](funcs))
+	sf := NewSplitter[int, int](ctx, WithFunctions[int, int](funcs))
 
 	// send all the jobs
 	for i := 0; i < numJobs; i++ {
-		jobChan <- i
+		sf.Do(i)
 		exp[i] = i * i
 	}
 	// Done should have the splitter close the output channel once all jobs are done
-	close(jobChan)
+	sf.Done()
 
 	// read results in a goroutine in case it hangs
 	done := make(chan bool)

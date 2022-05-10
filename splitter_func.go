@@ -6,15 +6,20 @@ import (
 	"sync"
 )
 
-func Split[J any, R any](ctx context.Context, jobs <-chan J, opts ...SplitterOption[J, R]) (<-chan R, <-chan error, func()) {
+// Split takes a job channel and worker funcs. It splits the work of processing jobs from the channel among
+// the provided funcs. It returns a results channel, an error channel, and a cancel func. It will continue
+// looking for jobs until the jobs channel is closed. Once it stops, it will close the results and error channels.
+// Processing will also stop if the ctx is closed, if the close func is called, or if a workerFunc returns an
+// error and stopOnError is true.
+func Split[J any, R any](ctx context.Context, jobs <-chan J, workerFuncs []func(J) (R, error), stopOnError bool) (<-chan R, <-chan error, func()) {
 	results := make(chan R, 1000)
 	errors := make(chan error, 1000)
-	operations := make([]func(J) (R, error), 0)
+	operations := workerFuncs
 	workerDone := sync.WaitGroup{}
 	cancelLock := sync.Mutex{}
 	done := make(chan bool)
-	stopOnError := true
 
+	// define a cancel func to be called in case ctx timeout, workerFunc error, or user cancel
 	cancel := func(err error) {
 		// lock because there are mutliple sources of Cancel (context, user, error in processing)
 		// and we need to prevent multiple calls to close(sf.done)
@@ -44,6 +49,7 @@ func Split[J any, R any](ctx context.Context, jobs <-chan J, opts ...SplitterOpt
 		}
 	}()
 
+	// make a worker for each of our operations
 	for i, f := range operations {
 		workerDone.Add(1)
 		go func(id int, fn func(J) (R, error)) {
