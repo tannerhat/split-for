@@ -1,10 +1,11 @@
 # split-for
 [![Go Reference](https://pkg.go.dev/badge/badge/github.com/tannerhat/split-for.svg)](https://pkg.go.dev/github.com/tannerhat/split-for)
+
 A little package for handling all the boilerplate stuff for splitting jobs amongst a pool of workers. There's a few ways to use based on how you want to interact with the workers.
 ## As a Function
 ### Split[J any, R any]
 The actual logic backing everything else. Internally this function spins up goroutines for each worker func it is given and has them process jobs from a passed in channel until that channel closes. It puts results into a results channelc. It also handles premature stopping due to context cancellation, user cancellation, or error return from one of the worker funcs. As long as the user closes the jobs channel (or one of the stopping events happens), all goroutines will be cleaned up.
-```
+```go
 square := func(x int) (int, error) {
     return x * x, nil
 }
@@ -12,7 +13,7 @@ square := func(x int) (int, error) {
 jobs := make(chan int, 100)
 funcs := []func(int) (int, error){square, square, square}
 // split the jobs among the funcs (do not exit on func failure)
-results, _, _ := Split[int, int](ctx, jobs, funcs, true)
+results, errors, close := Split[int, int](ctx, jobs, funcs, true)
 for i := 0; i < 25; i++ {
     // add each job, can be done before or after passing to Split
     jobs <- i
@@ -29,7 +30,7 @@ for x := range results {
 ### SplitSlice[J any, R any]
 Send a slice of jobs and get back a slice of results in the same order. This turns Split into
 a synchronous function, but simplifies the interface.
-```
+```go
 square := func(x int) int {
     return x * x
 }
@@ -49,7 +50,7 @@ for x := range results {
 ## As a Struct
 ### Splitter[J any, R any]
 A struct wrapped around a call to Split[J,R]. Replaces the jobs channel with methods `Do` and `Done` and gives a `Close()` method.
-```
+```go
 square := func(x int) int {
     return x * x
 }
