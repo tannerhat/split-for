@@ -17,7 +17,7 @@ func TestSliceSplitter(t *testing.T) {
 		exp = append(exp, i*i)
 	}
 
-	results, err := SplitSplice(ctx, jobs, square, 100)
+	results, err := SplitSlice(ctx, jobs, square, 100)
 	if err != nil {
 		t.Errorf("unexpected splitter failure:%s", err)
 	}
@@ -40,7 +40,7 @@ func TestSliceSplitterTimeout(t *testing.T) {
 		jobs = append(jobs, i)
 	}
 
-	_, err := SplitSplice(ctx, jobs, stall, 100)
+	_, err := SplitSlice(ctx, jobs, stall, 100)
 	if err == nil {
 		t.Errorf("expected splitter to context timeout")
 	} else if !errors.Is(err, ErrContextCancel) {

@@ -18,9 +18,9 @@ func funcToSliceFunc[J any, R any](f func(J) R, results []R) func(job[J]) R {
 	}
 }
 
-// SplitSplice is a wrapper around the split function that takes a slice of jobs and returns a slice
+// SplitSlice is a wrapper around the split function that takes a slice of jobs and returns a slice
 // of results where f(job[n]) == results[n].
-func SplitSplice[J any, R any](ctx context.Context, jobs []J, f func(J) R, workerCount int) ([]R, error) {
+func SplitSlice[J any, R any](ctx context.Context, jobs []J, f func(J) R, workerCount int) ([]R, error) {
 	results := make([]R, len(jobs))
 
 	// create splitter with the jobChan and funcToSliceFunc as the func, the wrapper will set the
