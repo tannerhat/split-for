@@ -53,3 +53,21 @@ func ExampleSplit_simple() {
 		fmt.Println(x)
 	}
 }
+
+func ExampleSplitSlice_simple() {
+	square := func(x int) int {
+		return x * x
+	}
+
+	ctx := context.Background()
+	jobs := []int{}
+	for i := 0; i < 100; i++ {
+		jobs = append(jobs, i)
+	}
+
+	results, _ := SplitSlice(ctx, jobs, square, 100)
+
+	for x := range results {
+		fmt.Println(x)
+	}
+}

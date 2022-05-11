@@ -30,8 +30,8 @@ for x := range results {
 Send a slice of jobs and get back a slice of results in the same order. This turns Split into
 a synchronous function, but simplifies the interface.
 ```
-square := func(x int) (int, error) {
-    return x * x, nil
+square := func(x int) int {
+    return x * x
 }
 
 ctx := context.Background()
