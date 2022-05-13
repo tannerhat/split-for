@@ -6,15 +6,16 @@ import (
 	"sync"
 )
 
-// Split takes a job channel and worker funcs. It splits the work of processing jobs from the channel among
+// Split takes a job channel, WorkerFuncs, and options. It splits the work of processing jobs from the channel among
 // the provided funcs. It returns a results channel, an error channel, and a cancel func. It will continue
-// looking for jobs until the jobs channel is closed. Once it stops, it will close the results and error channels.
+// looking for jobs until the jobs channel is closed. Once it stops, it will close the results channel.
 // Processing will also stop if the ctx is closed, if the close func is called, or if a workerFunc returns an
 // error and stopOnError is true.
-func Split[J any, R any](ctx context.Context, jobs <-chan J, workerFuncs []func(J) (R, error), stopOnError bool) (<-chan R, <-chan error, func()) {
+func Split[J any, R any](ctx context.Context, jobs <-chan J, funcs WorkerFuncs[J, R], opts ...SplitterOption) (<-chan R, <-chan error, func()) {
+	cfg := (&config{}).load(opts...)
 	results := make(chan R, 1000)
 	errors := make(chan error, 1000)
-	operations := workerFuncs
+	operations := funcs
 	workerDone := sync.WaitGroup{}
 	cancelLock := sync.Mutex{}
 	done := make(chan bool)
@@ -67,7 +68,7 @@ func Split[J any, R any](ctx context.Context, jobs <-chan J, workerFuncs []func(
 					res, err := fn(next)
 					// the function failed! either stop or just send through the error channel and move on
 					if err != nil {
-						if stopOnError {
+						if cfg.stopOnError {
 							// stopOnError means we give up after any error, cancel(err) will send err
 							// to the error chan and cause all the workers to stop/
 							cancel(fmt.Errorf(errorCancelMsg, err))
@@ -88,7 +89,6 @@ func Split[J any, R any](ctx context.Context, jobs <-chan J, workerFuncs []func(
 		workerDone.Wait()
 		// once the workers exit, close the results and error channels
 		close(results)
-		close(errors)
 
 		// now, if sf.done isn't closed, we close it (have to acquire lock)
 		// pass nil because we don't want to send an error if we close here

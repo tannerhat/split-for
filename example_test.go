@@ -14,7 +14,7 @@ func ExampleSplitter_simple() {
 
 	// create a splitter, passing in a function and how many routines processing
 	// jobs using this function you want
-	sf := NewSplitter[int, int](ctx, WithFunction(square, 5))
+	sf := NewSplitter[int, int](ctx, FromFunction(square, 5))
 	for i := 0; i < 25; i++ {
 		// add each job
 		sf.Do(i)
@@ -39,7 +39,7 @@ func ExampleSplit_simple() {
 	jobs := make(chan int, 100)
 	funcs := []func(int) (int, error){square, square, square}
 	// split the jobs among the funcs (do not exit on func failure)
-	results, _, _ := Split[int, int](ctx, jobs, funcs, true)
+	results, _, _ := Split[int, int](ctx, jobs, funcs, StopOnError())
 	for i := 0; i < 25; i++ {
 		// add each job, can be done before or after passing to Split
 		jobs <- i

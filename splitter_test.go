@@ -28,7 +28,7 @@ func TestSplitter(t *testing.T) {
 
 	exp := make([]int, 25)
 	ret := []int{}
-	sf := NewSplitter[int, int](ctx, WithFunction(square, 5))
+	sf := NewSplitter[int, int](ctx, FromFunction(square, 5))
 	for i := 0; i < 25; i++ {
 		sf.Do(i)
 		exp[i] = i * i
@@ -62,7 +62,7 @@ func TestSplitterChannelFull(t *testing.T) {
 
 	exp := []int{}
 	ret := []int{}
-	sf := NewSplitter[int, int](ctx, WithFunction(square, 5))
+	sf := NewSplitter[int, int](ctx, FromFunction(square, 5))
 	errors := 0
 	for i := 0; errors < 5; i++ {
 		err := sf.Do(i)
@@ -120,7 +120,7 @@ func cancelTest(t *testing.T, reason cancelType) {
 	cancelTime := 1000
 	readDone := make(chan bool)
 
-	sf := NewSplitter[int, int](ctx, WithErrorFunction(squareError, 5), StopOnError[int, int]())
+	sf := NewSplitter[int, int](ctx, FromErrorFunction(squareError, 5), StopOnError())
 	// in a routine, add jobs and do a cancel, it's in a routine so we can check that
 	// the splitter exits right away while we keep adding jobs
 	stopAdd := make(chan bool)
@@ -193,7 +193,7 @@ func TestErrorReturn(t *testing.T) {
 
 	exp := []int{}
 	ret := []int{}
-	sf := NewSplitter[int, int](ctx, WithErrorFunction(squareError, 20))
+	sf := NewSplitter[int, int](ctx, FromErrorFunction(squareError, 20))
 
 	stopAdd := make(chan bool)
 	go func() {
@@ -295,7 +295,7 @@ func TestSplitterWithFuncs(t *testing.T) {
 	}
 
 	// create splitter with the funcs
-	sf := NewSplitter[int, int](ctx, WithFunctions[int, int](funcs))
+	sf := NewSplitter[int, int](ctx, FromFunctions[int, int](funcs))
 
 	// send all the jobs
 	for i := 0; i < numJobs; i++ {

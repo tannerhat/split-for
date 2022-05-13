@@ -25,7 +25,7 @@ func SplitSlice[J any, R any](ctx context.Context, jobs []J, f func(J) R, worker
 
 	// create splitter with the jobChan and funcToSliceFunc as the func, the wrapper will set the
 	// results into the results slice in the order the were inserted into the jobChan
-	sliceSplitter := NewSplitter[job[J], R](ctx, WithFunction(funcToSliceFunc(f, results), workerCount), StopOnError[job[J], R]())
+	sliceSplitter := NewSplitter[job[J], R](ctx, FromFunction(funcToSliceFunc(f, results), workerCount), StopOnError())
 
 	// load the job channel with all the jobs
 	for jobIdx := 0; jobIdx < len(jobs); jobIdx++ {

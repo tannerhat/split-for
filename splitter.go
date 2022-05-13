@@ -3,8 +3,6 @@ package splitter
 import (
 	"context"
 	"fmt"
-
-	"github.com/sirupsen/logrus"
 )
 
 // ErrJobChannelFull is returned on calls to Do where the internal job channel is full,
@@ -25,28 +23,20 @@ var errorCancelMsg = "cancelling due to processing error: %w"
 // for each function it starts with. Results are put into a channel.
 // Errors can also be read from a channel
 type Splitter[J any, R any] struct {
-	results     <-chan R
-	errors      <-chan error
-	jobs        chan J
-	operations  []func(J) (R, error)
-	cancel      func()
-	stopOnError bool
-
-	log logrus.FieldLogger
+	results <-chan R
+	errors  <-chan error
+	jobs    chan J
+	cancel  func()
 }
 
 // NewSplitter creates a Splitter that will read from the given job chan using workers
-// as defined by the SplitterOptions provided. The caller can add jobs to the channel before
+// that run the WorkerFuncs. The caller can add jobs to the channel before
 // or after the splitter is created. Once the channel is closed, the splitter will exit after
 // it finishes all the jobs inserted into the channel before the close.
-func NewSplitter[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]) *Splitter[J, R] {
+func NewSplitter[J any, R any](ctx context.Context, funcs WorkerFuncs[J, R], opts ...SplitterOption) *Splitter[J, R] {
 	sf := &Splitter[J, R]{}
-
-	for _, opt := range opts {
-		opt(sf)
-	}
 	sf.jobs = make(chan J, 1000)
-	results, errors, cancel := Split[J, R](ctx, sf.jobs, sf.operations, sf.stopOnError)
+	results, errors, cancel := Split[J, R](ctx, sf.jobs, funcs, opts...)
 	sf.errors = errors
 	sf.results = results
 	sf.cancel = cancel
@@ -54,6 +44,8 @@ func NewSplitter[J any, R any](ctx context.Context, opts ...SplitterOption[J, R]
 	return sf
 }
 
+// Do passes a job to the splitter's jobs channel, will return ErrJobChannelFull if the job channel
+// is full. Jobs can be retried in this case.
 func (sf *Splitter[J, R]) Do(job J) error {
 	select {
 	case sf.jobs <- job:
@@ -63,6 +55,9 @@ func (sf *Splitter[J, R]) Do(job J) error {
 	}
 }
 
+// Done closes the splitter's jobs channel. It signals that no more jobs are coming in and the workers
+// will exit once they have completed all the pending jobs. The results channel will close after they
+// exit
 func (sf *Splitter[J, R]) Done() {
 	close(sf.jobs)
 }
