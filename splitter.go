@@ -63,13 +63,13 @@ func (sf *Splitter[J, R]) Done() {
 }
 
 // Errors gives the Splitter's error channel. Any error from the workers along with context
-// or user cancel will be passed to the error channel. Closed by the Splitter after workers exit.
+// or user cancel will be passed to the error channel.
 func (sf *Splitter[J, R]) Errors() <-chan error {
 	return sf.errors
 }
 
 // Results gives the Splitter's results channel. All results from the workers are sent to
-// this channel.
+// this channel. Closed by the Splitter after workers exit.
 func (sf *Splitter[J, R]) Results() <-chan R {
 	return sf.results
 }
