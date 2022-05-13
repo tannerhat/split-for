@@ -69,7 +69,7 @@ func (sf *Splitter[J, R]) Errors() <-chan error {
 }
 
 // Results gives the Splitter's results channel. All results from the workers are sent to
-// this channel. Closed by the Splitter after workers exit.
+// this channel.
 func (sf *Splitter[J, R]) Results() <-chan R {
 	return sf.results
 }
