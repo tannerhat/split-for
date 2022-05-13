@@ -9,23 +9,28 @@ type job[J any] struct {
 	value J
 }
 
-// funcToSliceFunc takes a func(J) R and a results slice and creates a func(job job[J]) R
+// workerFuncsToSliceWorkerFuncs takes WorkerFuncs and a results slice and creates a func(job job[J]) R
 // that runs the original func on job.value and sets the value as results[job.idx]
-func funcToSliceFunc[J any, R any](f func(J) R, results []R) func(job[J]) R {
-	return func(j job[J]) R {
-		results[j.index] = f(j.value)
-		return results[j.index]
+func workerFuncsToSliceWorkerFuncs[J any, R any](funcs WorkerFuncs[J, R], results []R) WorkerFuncs[job[J], R] {
+	ret := make(WorkerFuncs[job[J], R], len(funcs))
+	for i, f := range funcs {
+		ret[i] = func(j job[J]) (R, error) {
+			res, err := f(j.value)
+			results[j.index] = res
+			return res, err
+		}
 	}
+	return ret
 }
 
 // SplitSlice is a wrapper around the split function that takes a slice of jobs and returns a slice
 // of results where f(job[n]) == results[n].
-func SplitSlice[J any, R any](ctx context.Context, jobs []J, f func(J) R, workerCount int) ([]R, error) {
+func SplitSlice[J any, R any](ctx context.Context, jobs []J, funcs WorkerFuncs[J, R]) ([]R, error) {
 	results := make([]R, len(jobs))
 
 	// create splitter with the jobChan and funcToSliceFunc as the func, the wrapper will set the
 	// results into the results slice in the order the were inserted into the jobChan
-	sliceSplitter := NewSplitter[job[J], R](ctx, FromFunction(funcToSliceFunc(f, results), workerCount), StopOnError())
+	sliceSplitter := NewSplitter[job[J], R](ctx, workerFuncsToSliceWorkerFuncs(funcs, results), StopOnError())
 
 	// load the job channel with all the jobs
 	for jobIdx := 0; jobIdx < len(jobs); jobIdx++ {

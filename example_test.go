@@ -72,7 +72,7 @@ func ExampleSplitSlice_simple() {
 		jobs = append(jobs, i)
 	}
 
-	results, _ := SplitSlice(ctx, jobs, square, 100)
+	results, _ := SplitSlice(ctx, jobs, FromFunction(square, 100))
 
 	for x := range results {
 		fmt.Println(x)
