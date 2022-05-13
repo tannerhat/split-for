@@ -6,14 +6,17 @@ A little package for handling all the boilerplate stuff for splitting jobs among
 ### Split[J any, R any]
 The actual logic backing everything else. Internally this function spins up goroutines for each worker func it is given and has them process jobs from a passed in channel until that channel closes. It puts results into a results channelc. It also handles premature stopping due to context cancellation, user cancellation, or error return from one of the worker funcs. As long as the user closes the jobs channel (or one of the stopping events happens), all goroutines will be cleaned up.
 ```go
-square := func(x int) (int, error) {
-    return x * x, nil
+ctx := context.Background()
+
+multFactory := func(m int) func(int) (int, error) {
+    return func(x int) (int, error) { return x * m, nil }
 }
 
 jobs := make(chan int, 100)
-funcs := []func(int) (int, error){square, square, square}
-// split the jobs among the funcs (do not exit on func failure)
-results, errors, close := Split[int, int](ctx, jobs, funcs, true)
+// passing 3 different functions, each gets a worker and will pull jobs and send results.
+funcs := []func(int) (int, error){multFactory(1), multFactory(2), multFactory(3)}
+// split the jobs among the funcs (exit if any fuction returns an error)
+results, errors, _ := Split[int, int](ctx, jobs, funcs, StopOnError())
 for i := 0; i < 25; i++ {
     // add each job, can be done before or after passing to Split
     jobs <- i
@@ -25,6 +28,12 @@ close(jobs)
 // jobs have been processed
 for x := range results {
     fmt.Println(x)
+}
+
+select {
+case err := <-errors:
+    fmt.Printf("it failed %s\n", err)
+default:
 }
 ```
 ### SplitSlice[J any, R any]
@@ -41,7 +50,7 @@ for i := 0; i < 100; i++ {
     jobs = append(jobs, i)
 }
 
-results, err := SplitSlice(ctx, jobs, square, 100)
+results, _ := SplitSlice(ctx, jobs, square, 100)
 
 for x := range results {
     fmt.Println(x)
@@ -51,13 +60,15 @@ for x := range results {
 ### Splitter[J any, R any]
 A struct wrapped around a call to Split[J,R]. Replaces the jobs channel with methods `Do` and `Done` and gives a `Close()` method.
 ```go
+ctx := context.Background()
+
 square := func(x int) int {
     return x * x
 }
 
 // create a splitter, passing in a function and how many routines processing
 // jobs using this function you want
-sf := NewSplitter[int, int](ctx, WithFunction(square, 5))
+sf := NewSplitter[int, int](ctx, FromFunction(square, 5))
 for i := 0; i < 25; i++ {
     // add each job
     sf.Do(i)

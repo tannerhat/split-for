@@ -32,14 +32,15 @@ func ExampleSplitter_simple() {
 func ExampleSplit_simple() {
 	ctx := context.Background()
 
-	square := func(x int) (int, error) {
-		return x * x, nil
+	multFactory := func(m int) func(int) (int, error) {
+		return func(x int) (int, error) { return x * m, nil }
 	}
 
 	jobs := make(chan int, 100)
-	funcs := []func(int) (int, error){square, square, square}
-	// split the jobs among the funcs (do not exit on func failure)
-	results, _, _ := Split[int, int](ctx, jobs, funcs, StopOnError())
+	// passing 3 different functions, each gets a worker and will pull jobs and send results.
+	funcs := []func(int) (int, error){multFactory(1), multFactory(2), multFactory(3)}
+	// split the jobs among the funcs (exit if any fuction returns an error)
+	results, errors, _ := Split[int, int](ctx, jobs, funcs, StopOnError())
 	for i := 0; i < 25; i++ {
 		// add each job, can be done before or after passing to Split
 		jobs <- i
@@ -51,6 +52,12 @@ func ExampleSplit_simple() {
 	// jobs have been processed
 	for x := range results {
 		fmt.Println(x)
+	}
+
+	select {
+	case err := <-errors:
+		fmt.Printf("it failed %s\n", err)
+	default:
 	}
 }
 
